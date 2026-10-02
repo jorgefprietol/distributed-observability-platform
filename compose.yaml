@@ -1,0 +1,208 @@
+name: distributed-observability
+
+x-app: &app
+  image: ${APP_IMAGE:-distributed-observability-platform:local}
+  build:
+    context: .
+    args:
+      SOURCE_REVISION: ${SOURCE_REVISION:-local}
+  restart: unless-stopped
+  read_only: true
+  cap_drop: [ALL]
+  security_opt: [no-new-privileges:true]
+  tmpfs: [/tmp:size=32m,mode=1777]
+  mem_limit: 256m
+  cpus: 0.5
+  pids_limit: 100
+  networks: [platform]
+  depends_on:
+    bootstrap:
+      condition: service_completed_successfully
+    collector:
+      condition: service_started
+
+x-app-env: &app-env
+  API_TOKEN: ${API_TOKEN:?Run scripts/init-env.py first}
+  OTEL_EXPORTER_OTLP_ENDPOINT: http://collector:4317
+  OTEL_EXPORTER_OTLP_INSECURE: "true"
+  OTEL_EXPORTER_OTLP_HEADERS: authorization=Bearer ${OTEL_TOKEN:?OTEL_TOKEN required}
+  ENABLE_FAULT_INJECTION: ${ENABLE_FAULT_INJECTION:-false}
+
+services:
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.19.22@sha256:e98f9c3b09beb2fbb9eaf667d602df3f0e00bd3644138b8458dc17ba1a675595
+    environment:
+      discovery.type: single-node
+      xpack.security.enabled: "true"
+      xpack.security.http.ssl.enabled: "false"
+      xpack.security.transport.ssl.enabled: "false"
+      ELASTIC_PASSWORD: ${ELASTIC_PASSWORD:?ELASTIC_PASSWORD required}
+      ES_JAVA_OPTS: -Xms768m -Xmx768m
+      node.store.allow_mmap: "false"
+    ports: ["127.0.0.1:19200:9200"]
+    volumes: [elastic-data:/usr/share/elasticsearch/data]
+    networks: [platform]
+    mem_limit: 1536m
+    cpus: 1.5
+    restart: unless-stopped
+    healthcheck:
+      test: [CMD-SHELL, 'curl -fsS -u "elastic:$$ELASTIC_PASSWORD" http://localhost:9200/_cluster/health | grep -q "status"']
+      interval: 10s
+      timeout: 5s
+      retries: 30
+
+  kibana:
+    image: docker.elastic.co/kibana/kibana:8.19.22@sha256:fb480ca9e34feb91738348ead6be37400c1017592bee7e7a5119a5fcd3d5fc69
+    environment:
+      ELASTICSEARCH_HOSTS: http://elasticsearch:9200
+      ELASTICSEARCH_USERNAME: kibana_system
+      ELASTICSEARCH_PASSWORD: ${KIBANA_PASSWORD:?KIBANA_PASSWORD required}
+      XPACK_ENCRYPTEDSAVEDOBJECTS_ENCRYPTIONKEY: ${KIBANA_ENCRYPTION_KEY:?key required}
+      XPACK_SECURITY_ENCRYPTIONKEY: ${KIBANA_ENCRYPTION_KEY}
+      XPACK_REPORTING_ENCRYPTIONKEY: ${KIBANA_ENCRYPTION_KEY}
+      SERVER_HOST: 0.0.0.0
+      TELEMETRY_ENABLED: "false"
+      NODE_OPTIONS: --max-old-space-size=768
+    ports: ["127.0.0.1:15601:5601"]
+    networks: [platform]
+    mem_limit: 1280m
+    cpus: 1
+    restart: unless-stopped
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
+    healthcheck:
+      test: [CMD-SHELL, 'curl -fsS http://localhost:5601/api/status > /dev/null']
+      interval: 10s
+      timeout: 5s
+      retries: 40
+
+  bootstrap:
+    image: ${APP_IMAGE:-distributed-observability-platform:local}
+    build: .
+    user: "0:0"
+    command: [python, scripts/bootstrap.py]
+    environment:
+      ELASTICSEARCH_URL: http://elasticsearch:9200
+      KIBANA_URL: http://kibana:5601
+      ELASTIC_PASSWORD: ${ELASTIC_PASSWORD}
+      KIBANA_PASSWORD: ${KIBANA_PASSWORD}
+      INGEST_PASSWORD: ${INGEST_PASSWORD:?INGEST_PASSWORD required}
+    volumes: [service-logs:/logs, activation-data:/data, filebeat-data:/filebeat-data, collector-data:/var/lib/otelcol]
+    networks: [platform]
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
+    mem_limit: 256m
+    restart: "no"
+
+  activation-api:
+    <<: *app
+    environment:
+      <<: *app-env
+      SERVICE_NAME: activation-api
+    ports: ["127.0.0.1:18090:8080"]
+    volumes: [service-logs:/logs, activation-data:/data]
+
+  inventory:
+    <<: *app
+    environment:
+      <<: *app-env
+      SERVICE_NAME: inventory
+    volumes: [service-logs:/logs]
+    tmpfs: [/tmp:size=32m,mode=1777, /data:size=16m,uid=10001,gid=10001]
+
+  provisioning:
+    <<: *app
+    environment:
+      <<: *app-env
+      SERVICE_NAME: provisioning
+    volumes: [service-logs:/logs]
+    tmpfs: [/tmp:size=32m,mode=1777, /data:size=16m,uid=10001,gid=10001]
+
+  collector:
+    image: otel/opentelemetry-collector-contrib:0.161.0@sha256:fd328de2552466ad78385e1b1289c3f2402b1c45f265b252aab1955b42845ac1
+    command: [--config=/etc/otelcol/config.yaml]
+    environment:
+      APM_SECRET_TOKEN: ${APM_SECRET_TOKEN:?APM_SECRET_TOKEN required}
+      OTEL_TOKEN: ${OTEL_TOKEN}
+    volumes: [./observability/collector.yaml:/etc/otelcol/config.yaml:ro, collector-data:/var/lib/otelcol]
+    user: "10001:10001"
+    networks: [platform]
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    mem_limit: 256m
+    cpus: 0.5
+    restart: unless-stopped
+    depends_on:
+      apm-server:
+        condition: service_started
+
+  apm-server:
+    image: docker.elastic.co/apm/apm-server:8.19.22@sha256:3b331754befe21eb65fc7e5ce4c9e8656ec677942a1dce3bbbf34fd1d058cdad
+    command: [-e, --strict.perms=false]
+    environment:
+      INGEST_PASSWORD: ${INGEST_PASSWORD}
+      APM_SECRET_TOKEN: ${APM_SECRET_TOKEN}
+    volumes: [./observability/apm-server.yaml:/usr/share/apm-server/apm-server.yml:ro]
+    networks: [platform]
+    mem_limit: 384m
+    cpus: 0.5
+    restart: unless-stopped
+    depends_on:
+      bootstrap:
+        condition: service_completed_successfully
+
+  logstash:
+    image: docker.elastic.co/logstash/logstash:8.19.22@sha256:24de1802d7faf3d53eb262ce43c426cd6b9abaf51f7aec16da3d886244d3c333
+    environment:
+      INGEST_PASSWORD: ${INGEST_PASSWORD}
+      LS_JAVA_OPTS: -Xms256m -Xmx256m
+      XPACK_MONITORING_ENABLED: "false"
+      PIPELINE_WORKERS: "1"
+    volumes: [./observability/logstash.conf:/usr/share/logstash/pipeline/logstash.conf:ro, logstash-data:/usr/share/logstash/data]
+    networks: [platform]
+    mem_limit: 768m
+    cpus: 1
+    restart: unless-stopped
+    depends_on:
+      bootstrap:
+        condition: service_completed_successfully
+
+  filebeat:
+    image: docker.elastic.co/beats/filebeat:8.19.22@sha256:32c23650b74deefa0236b456ab41f97cb5d5345e449903aa46ad217f8cdc3b26
+    command: [-e, --strict.perms=false]
+    user: "10001:10001"
+    volumes: [./observability/filebeat.yaml:/usr/share/filebeat/filebeat.yml:ro, service-logs:/logs:ro, filebeat-data:/usr/share/filebeat/data]
+    networks: [platform]
+    mem_limit: 192m
+    restart: unless-stopped
+    depends_on:
+      logstash:
+        condition: service_started
+
+  metricbeat:
+    image: docker.elastic.co/beats/metricbeat:8.19.22@sha256:566751f4ae0b928a82f2bb25a7b87941999131fba3670cccc6288608fc81f34c
+    command: [-e, --strict.perms=false]
+    environment:
+      INGEST_PASSWORD: ${INGEST_PASSWORD}
+    volumes: [./observability/metricbeat.yaml:/usr/share/metricbeat/metricbeat.yml:ro]
+    networks: [platform]
+    mem_limit: 192m
+    restart: unless-stopped
+    depends_on:
+      bootstrap:
+        condition: service_completed_successfully
+
+volumes:
+  elastic-data:
+  activation-data:
+  service-logs:
+  collector-data:
+  logstash-data:
+  filebeat-data:
+
+networks:
+  platform:
+    driver: bridge

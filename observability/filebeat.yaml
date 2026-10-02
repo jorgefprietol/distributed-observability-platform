@@ -1,0 +1,31 @@
+filebeat.inputs:
+  - type: filestream
+    id: application-json
+    paths: [/logs/*.json, /logs/*.json.*]
+    prospector.scanner.fingerprint.length: 64
+    parsers:
+      - ndjson:
+          target: ""
+          add_error_key: true
+          overwrite_keys: true
+    fields_under_root: true
+    fields:
+      data_stream:
+        type: logs
+        dataset: platform
+        namespace: local
+  - type: filestream
+    id: http-access
+    paths: [/logs/*.access, /logs/*.access.*]
+    prospector.scanner.fingerprint.length: 64
+    fields_under_root: true
+    fields:
+      data_stream:
+        type: logs
+        dataset: access
+        namespace: local
+output.logstash:
+  hosts: [logstash:5044]
+queue.disk:
+  max_size: 512MB
+logging.level: warning

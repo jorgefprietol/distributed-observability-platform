@@ -1,0 +1,53 @@
+extensions:
+  health_check:
+    endpoint: 0.0.0.0:13133
+  bearertokenauth/receiver:
+    token: ${env:OTEL_TOKEN}
+  file_storage:
+    directory: /var/lib/otelcol
+
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+        auth:
+          authenticator: bearertokenauth/receiver
+
+processors:
+  memory_limiter:
+    check_interval: 1s
+    limit_mib: 180
+    spike_limit_mib: 40
+  batch:
+    timeout: 1s
+    send_batch_size: 256
+
+exporters:
+  otlp/apm:
+    endpoint: apm-server:8200
+    tls:
+      insecure: true
+    headers:
+      Authorization: Bearer ${env:APM_SECRET_TOKEN}
+    sending_queue:
+      enabled: true
+      queue_size: 512
+      storage: file_storage
+    retry_on_failure:
+      enabled: true
+      initial_interval: 1s
+      max_interval: 15s
+      max_elapsed_time: 300s
+
+service:
+  extensions: [health_check, bearertokenauth/receiver, file_storage]
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [memory_limiter, batch]
+      exporters: [otlp/apm]
+    metrics:
+      receivers: [otlp]
+      processors: [memory_limiter, batch]
+      exporters: [otlp/apm]
