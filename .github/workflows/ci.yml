@@ -147,7 +147,7 @@ jobs:
           digest=$(docker inspect --format '{{index .RepoDigests 0}}' "$REGISTRY_IMAGE:sha-$COMMIT_SHA" | cut -d@ -f2)
           echo "IMAGE_DIGEST=$digest" >> "$GITHUB_ENV"
           echo "Published: \`$REGISTRY_IMAGE@$digest\`" >> "$GITHUB_STEP_SUMMARY"
-      - uses: actions/attest-build-provenance@43d14bc2b83dec42d39ecae14e916627a18bb661 # v3
+      - uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a # v3
         with:
           subject-name: ${{ env.REGISTRY_IMAGE }}
           subject-digest: ${{ env.IMAGE_DIGEST }}
