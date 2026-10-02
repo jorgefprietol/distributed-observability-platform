@@ -1,5 +1,11 @@
 # Verificación
 
+Las 22 pruebas automatizadas pasan en Windows y Linux, con 98,36 % de cobertura sobre aplicación, configuración y persistencia. La prueba E2E del stack también pasó en runners hospedados y en Docker Desktop.
+
+La [ejecución de referencia](https://github.com/jorgefprietol/distributed-observability-platform/actions/runs/37041870034) verificó las tres aplicaciones bajo una misma traza, logs correlacionados, cinco eventos de error del incidente controlado, 14 eventos de acceso HTTP, métricas de CPU y métricas de aplicación. El escaneo bloqueante pasó, generó el SBOM y publicó una imagen pública con atestación de procedencia. Los números de eventos son observaciones de esa ejecución, no benchmarks ni resultados productivos.
+
+También se revisaron visualmente los seis paneles de Kibana, incluida la conversión de duración a milisegundos. Después de generar 30 activaciones normales y ejecutar los escenarios E2E, el evaluador SLO detectó una ventana con incidentes: `status=breach` y código de salida `2`. El reporte quedó en `artifacts/slo.json`; sus valores dependen del tráfico y recursos de esa ejecución.
+
 ## Criterios de aceptación
 
 - Pruebas de contratos, autenticación, escenarios de fallo y persistencia de idempotencia.

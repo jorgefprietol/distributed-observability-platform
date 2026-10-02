@@ -81,6 +81,8 @@ services:
     image: ${APP_IMAGE:-distributed-observability-platform:local}
     build: .
     user: "0:0"
+    healthcheck:
+      disable: true
     command: [python, scripts/bootstrap.py]
     environment:
       ELASTICSEARCH_URL: http://elasticsearch:9200
@@ -166,6 +168,12 @@ services:
     mem_limit: 768m
     cpus: 1
     restart: unless-stopped
+    healthcheck:
+      test: [CMD-SHELL, "curl -fsS http://localhost:9600/_node/stats/pipelines | grep -q '\"main\"'"]
+      interval: 10s
+      timeout: 5s
+      start_period: 180s
+      retries: 45
     depends_on:
       bootstrap:
         condition: service_completed_successfully
@@ -180,7 +188,7 @@ services:
     restart: unless-stopped
     depends_on:
       logstash:
-        condition: service_started
+        condition: service_healthy
 
   metricbeat:
     image: docker.elastic.co/beats/metricbeat:8.19.22@sha256:566751f4ae0b928a82f2bb25a7b87941999131fba3670cccc6288608fc81f34c

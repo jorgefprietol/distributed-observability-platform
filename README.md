@@ -32,6 +32,10 @@ flowchart LR
 - Retención de logs con rollover diario o por tamaño y eliminación a los siete días desde rollover; métricas de infraestructura eliminadas a los siete días desde creación.
 - Escenarios protegidos de latencia y fallo, y evaluación de SLO mediante un comando con código de salida accionable.
 
+![Dashboard operativo con seis paneles](docs/images/operations-overview.jpg)
+
+Captura del stack en ejecución con tráfico sintético, incluyendo incidentes controlados. La latencia se expresa en milisegundos y los conteos de volumen incluyen únicamente peticiones HTTP.
+
 ## Ejecutar
 
 Requisitos: Docker con contenedores Linux, Docker Compose y Python 3.12. Reservar aproximadamente 6 GB de RAM libres para el stack y espacio para las imágenes Elastic. La primera ejecución necesita internet para descargar imágenes e instalar la integración APM.
@@ -77,6 +81,7 @@ python -m venv .venv
 .\.venv\Scripts\python -m ruff format --check .
 .\.venv\Scripts\python -m pytest
 .\.venv\Scripts\python scripts/e2e.py
+.\.venv\Scripts\python scripts/traffic.py --requests 30 --scenario normal
 .\.venv\Scripts\python scripts/check-slo.py
 ```
 

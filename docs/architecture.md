@@ -12,6 +12,8 @@ Los errores de transporte, timeouts, respuestas no satisfactorias o JSON inváli
 
 La capa HTTP extrae el contexto W3C antes de abrir el span servidor. Cada llamada saliente crea un span cliente e inyecta el contexto vigente. Los spans de negocio incluyen el identificador de activación y dimensiones acotadas de plan y región. La respuesta expone la traza para consultar APM y Discover.
 
+La telemetría automática del framework está deshabilitada para mantener una única instrumentación explícita y controlar las dimensiones y los datos capturados.
+
 El OpenTelemetry Collector valida un bearer token, limita memoria, agrupa exportaciones y utiliza una cola persistente con reintentos hacia APM Server. Esta cola reduce pérdidas durante indisponibilidades temporales; no garantiza entrega ilimitada. Los SDK emplean buffers acotados y la instrumentación no bloquea el negocio esperando al backend.
 
 La implementación usa los SDK upstream de OpenTelemetry y APM Server standalone de Elastic 8.19. La integración APM se instala antes de iniciar los emisores. Este modo permite controlar de forma explícita cada etapa del pipeline; futuras migraciones pueden adoptar Elastic Agent/EDOT según la compatibilidad del entorno.
@@ -25,6 +27,8 @@ Las plantillas definen tipos de timestamp, IDs, estado HTTP y duración antes de
 ## Seguridad y operación
 
 La API y el receptor OTLP usan credenciales diferentes. Elasticsearch conserva seguridad habilitada. La cuenta `kibana_system` conecta Kibana al clúster; `telemetry_ingest` puede escribir en los patrones de telemetría y consultar estado, pero no administrar usuarios. El bootstrap administrativo termina tras completar la provisión.
+
+APM Server tiene permiso de lectura sobre el índice restringido `.apm-agent-configuration`, necesario para su caché de configuración central. Este permiso se limita a ese índice, conforme a los [roles de APM Server](https://www.elastic.co/docs/solutions/observability/apm/create-assign-feature-roles-to-apm-server-users).
 
 Los servicios propios ejecutan UID 10001, sin capabilities, con raíz de sólo lectura, límites de procesos y recursos. Los puertos publicados son exclusivamente locales. La red interna usa HTTP; el perfil está destinado a operación en una estación de trabajo. El acceso por una red compartida requiere TLS y un gateway autenticado.
 

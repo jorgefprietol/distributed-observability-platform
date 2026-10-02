@@ -43,7 +43,12 @@ def main():
                         "read",
                         "view_index_metadata",
                     ],
-                }
+                },
+                {
+                    "names": [".apm-agent-configuration"],
+                    "privileges": ["read"],
+                    "allow_restricted_indices": True,
+                },
             ],
         },
     )
@@ -166,6 +171,23 @@ def main():
                     "title": title,
                     "name": name,
                     "timeFieldName": "@timestamp",
+                    "allowNoIndex": True,
+                    **(
+                        {
+                            "runtimeFieldMap": {
+                                "latency_ms": {
+                                    "type": "double",
+                                    "script": {
+                                        "source": "if (doc.containsKey('event.duration') && "
+                                        "doc['event.duration'].size() != 0) { "
+                                        "emit(doc['event.duration'].value / 1000000.0); }",
+                                    },
+                                }
+                            }
+                        }
+                        if ident == "platform-logs"
+                        else {}
+                    ),
                 },
                 "override": True,
             },

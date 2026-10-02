@@ -78,12 +78,12 @@ chart(
     "HTTP requests over time",
     "histogram",
     [count, time],
-    'event.dataset: "platform"',
+    'event.dataset: "platform" and http.response.status_code: *',
 )
 chart("platform-errors", "Errors requiring investigation", "metric", [count], 'log.level: "error"')
 chart(
     "platform-latency",
-    "HTTP latency p95 (nanoseconds)",
+    "Activation API latency p95 (ms)",
     "metric",
     [
         {
@@ -91,10 +91,10 @@ chart(
             "enabled": True,
             "type": "percentiles",
             "schema": "metric",
-            "params": {"field": "event.duration", "percents": [95]},
+            "params": {"field": "latency_ms", "percents": [95]},
         }
     ],
-    'event.dataset: "platform"',
+    'event.dataset: "platform" and service.name: "activation-api"',
 )
 chart(
     "platform-status",
@@ -131,7 +131,7 @@ chart(
             "params": {"field": "service.name", "size": 10, "order": "desc", "orderBy": "1"},
         },
     ],
-    'event.dataset: "platform"',
+    'event.dataset: "platform" and http.response.status_code: *',
 )
 chart(
     "platform-cpu",

@@ -10,6 +10,7 @@ env = environment()
 client = httpx.Client(auth=("elastic", env["ELASTIC_PASSWORD"]), timeout=20)
 query = {
     "size": 0,
+    "track_total_hits": True,
     "query": {
         "bool": {
             "filter": [

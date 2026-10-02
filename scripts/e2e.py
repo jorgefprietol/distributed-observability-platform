@@ -31,6 +31,8 @@ def main():
     assert client.post(f"{api}/api/v1/activations", json={}).status_code == 401
     ingest = httpx.Client(auth=("telemetry_ingest", env["INGEST_PASSWORD"]), timeout=10)
     assert ingest.get(f"{es}/_security/user").status_code == 403
+    agent_config = ingest.post(f"{es}/.apm-agent-configuration/_search", json={"size": 0})
+    assert agent_config.status_code == 200
     traces = {}
     results = {}
     subprocess.run(
@@ -142,6 +144,9 @@ def main():
     assert {"platform-logs", "platform-traces", "platform-metrics"} <= {
         view["id"] for view in views.json()["data_view"]
     }
+    logs_view = admin.get(f"{kb}/api/data_views/data_view/platform-logs")
+    logs_view.raise_for_status()
+    assert logs_view.json()["data_view"]["runtimeFieldMap"]["latency_ms"]["type"] == "double"
     Path("artifacts").mkdir(exist_ok=True)
     evidence = {
         "result": "passed",

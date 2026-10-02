@@ -49,7 +49,18 @@ def create_app(settings: Settings, transport: httpx.AsyncBaseTransport | None = 
         for provider in providers:
             provider.shutdown()
 
-    app = FastAPI(title=settings.service, version="1.0.0", lifespan=lifespan)
+    app = FastAPI(
+        title=settings.service,
+        version="1.0.0",
+        lifespan=lifespan,
+        telemetry={
+            "auto_configure": False,
+            "tracing": False,
+            "metrics": False,
+            "logs": False,
+            "operation_spans": False,
+        },
+    )
 
     async def authenticate(authorization: Annotated[str | None, Header()] = None):
         expected = f"Bearer {settings.token}"
