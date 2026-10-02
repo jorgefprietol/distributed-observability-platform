@@ -80,6 +80,8 @@ jobs:
         run: docker compose up -d --no-build --wait --wait-timeout 600
       - name: Verify correlated traces, logs, metrics, dashboards and retention
         run: python scripts/e2e.py
+      - name: Exercise durable reconciliation after application restarts
+        run: python scripts/incident-drill.py --restart
       - name: Scan secrets, image vulnerabilities and generate SBOM
         run: |
           mkdir -p artifacts/security

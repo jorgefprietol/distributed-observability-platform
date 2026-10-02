@@ -6,7 +6,7 @@
 
 Descripción reutilizable para portafolio o sección de proyectos:
 
-> Diseñé e implementé una plataforma de observabilidad para tres microservicios, integrando Elasticsearch, Logstash, Kibana, Filebeat, Metricbeat y OpenTelemetry. Instrumenté trazas distribuidas y logs correlacionados, automaticé dashboards y políticas de retención, y desarrollé escenarios de incidentes para verificar latencia y fallos. Contenericé los servicios y configuré CI con pruebas, análisis de dependencias, SBOM y publicación de imágenes verificadas en GHCR.
+> Diseñé e implementé una plataforma de observabilidad para tres microservicios, integrando Elasticsearch, Logstash, Kibana, Filebeat, Metricbeat y OpenTelemetry. Instrumenté trazas distribuidas y logs correlacionados, automaticé dashboards y políticas de retención, y desarrollé escenarios de incidentes para verificar latencia y fallos. Implementé reconciliación mediante comprobantes persistidos, con recuperación tras reinicios y prevención de efectos duplicados. Contenericé los servicios y configuré CI con pruebas, análisis de dependencias, SBOM y publicación de imágenes verificadas en GHCR.
 
 ## Capacidades verificables
 
@@ -18,7 +18,7 @@ Descripción reutilizable para portafolio o sección de proyectos:
 | Instrumentación de métricas | Counter de peticiones e histograma de duración exportados por OTLP |
 | Operación Elastic | Data streams, plantillas, ILM, data views y seis visualizaciones provisionadas |
 | Resiliencia observable | Timeouts acotados, estado de reconciliación y escenarios de latencia/fallo |
-| Persistencia | Ledger SQLite WAL y reproducción del resultado tras reinicio |
+| Persistencia y recuperación | Identidad estable, ledger SQLite WAL, comprobantes por servicio y reconciliación verificada tras reinicios |
 | Seguridad | Credenciales aleatorias, mínimo acceso de ingestión y contenedores propios sin privilegios |
 | Entrega | Lockfiles con hashes, CI Windows/Linux, prueba del stack y publicación sin reconstruir |
 

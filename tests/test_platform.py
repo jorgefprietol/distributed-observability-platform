@@ -15,6 +15,18 @@ AUTH = {"Authorization": f"Bearer {TOKEN}", "Idempotency-Key": "request-00001"}
 BODY = {"plan": "fiber-100", "region": "north"}
 
 
+def receipt_response(request):
+    payload = json.loads(request.content)
+    return httpx.Response(
+        200,
+        json={
+            **payload,
+            "status": "reserved" if request.url.path.endswith("reservations") else "provisioned",
+            "effect_count": 1,
+        },
+    )
+
+
 @pytest.fixture
 def settings(tmp_path):
     return Settings(
@@ -32,7 +44,7 @@ def test_success_replay_and_downstream_auth(settings):
     def handler(request):
         calls.append(request)
         assert request.headers["authorization"] == f"Bearer {TOKEN}"
-        return httpx.Response(200, json={"status": "ok"})
+        return receipt_response(request)
 
     with TestClient(create_app(settings, httpx.MockTransport(handler))) as client:
         response = client.post("/api/v1/activations", headers=AUTH, json=BODY)
@@ -69,7 +81,7 @@ def test_downstream_failure_is_durable_and_not_retried(settings, failure):
 
 
 def test_idempotency_payload_conflict(settings):
-    transport = httpx.MockTransport(lambda r: httpx.Response(200, json={}))
+    transport = httpx.MockTransport(receipt_response)
     with TestClient(create_app(settings, transport)) as client:
         assert client.post("/api/v1/activations", headers=AUTH, json=BODY).status_code == 201
         response = client.post(

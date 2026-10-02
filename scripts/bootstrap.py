@@ -19,7 +19,14 @@ def request(method, url, **kwargs):
 
 
 def main():
-    for folder in ("/logs", "/data", "/filebeat-data", "/var/lib/otelcol"):
+    for folder in (
+        "/logs",
+        "/data",
+        "/inventory-data",
+        "/provisioning-data",
+        "/filebeat-data",
+        "/var/lib/otelcol",
+    ):
         path = Path(folder)
         path.mkdir(parents=True, exist_ok=True)
         os.chown(path, 10001, 10001)

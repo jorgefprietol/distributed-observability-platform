@@ -90,7 +90,7 @@ services:
       ELASTIC_PASSWORD: ${ELASTIC_PASSWORD}
       KIBANA_PASSWORD: ${KIBANA_PASSWORD}
       INGEST_PASSWORD: ${INGEST_PASSWORD:?INGEST_PASSWORD required}
-    volumes: [service-logs:/logs, activation-data:/data, filebeat-data:/filebeat-data, collector-data:/var/lib/otelcol]
+    volumes: [service-logs:/logs, activation-data:/data, inventory-data:/inventory-data, provisioning-data:/provisioning-data, filebeat-data:/filebeat-data, collector-data:/var/lib/otelcol]
     networks: [platform]
     depends_on:
       elasticsearch:
@@ -111,16 +111,14 @@ services:
     environment:
       <<: *app-env
       SERVICE_NAME: inventory
-    volumes: [service-logs:/logs]
-    tmpfs: ["/tmp:size=32m,mode=1777", "/data:size=16m,uid=10001,gid=10001"]
+    volumes: [service-logs:/logs, inventory-data:/data]
 
   provisioning:
     <<: *app
     environment:
       <<: *app-env
       SERVICE_NAME: provisioning
-    volumes: [service-logs:/logs]
-    tmpfs: ["/tmp:size=32m,mode=1777", "/data:size=16m,uid=10001,gid=10001"]
+    volumes: [service-logs:/logs, provisioning-data:/data]
 
   collector:
     image: otel/opentelemetry-collector-contrib:0.161.0@sha256:fd328de2552466ad78385e1b1289c3f2402b1c45f265b252aab1955b42845ac1
@@ -204,6 +202,8 @@ services:
         condition: service_completed_successfully
 
 volumes:
+  inventory-data:
+  provisioning-data:
   elastic-data:
   activation-data:
   service-logs:

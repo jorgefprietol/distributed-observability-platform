@@ -4,10 +4,9 @@ import time
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from typing import Annotated, Literal
-from uuid import uuid4
 
 import httpx
-from fastapi import Depends, FastAPI, Header, HTTPException, Request
+from fastapi import Depends, FastAPI, Header, HTTPException, Path, Request
 from fastapi.responses import JSONResponse
 from opentelemetry import metrics, propagate, trace
 from opentelemetry.trace import SpanKind, Status, StatusCode
@@ -22,7 +21,7 @@ class ActivationRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     plan: Literal["fiber-100", "fiber-500"]
     region: Literal["north", "south"]
-    scenario: Literal["normal", "latency", "failure"] = "normal"
+    scenario: Literal["normal", "latency", "failure", "response_loss"] = "normal"
 
 
 class ProvisionRequest(ActivationRequest):
@@ -82,6 +81,14 @@ def create_app(settings: Settings, transport: httpx.AsyncBaseTransport | None = 
             in {"/api/v1/activations", "/internal/reservations", "/internal/provisions"}
             else "/other"
         )
+        if request.url.path.startswith("/api/v1/activations/"):
+            route = (
+                "/api/v1/activations/{key}/reconcile"
+                if request.url.path.endswith("/reconcile")
+                else "/api/v1/activations/{key}"
+            )
+        elif request.url.path.startswith("/internal/") and request.method == "GET":
+            route = "/internal/effects/{activation_id}"
         started = time.perf_counter()
         with tracer.start_as_current_span(
             f"{request.method} {route}",
@@ -141,16 +148,30 @@ def create_app(settings: Settings, transport: httpx.AsyncBaseTransport | None = 
         store.db.execute("SELECT 1")
         return {"status": "ready", "service": settings.service}
 
-    async def downstream(url: str, payload: dict):
-        with tracer.start_as_current_span("POST downstream", kind=SpanKind.CLIENT) as span:
+    async def downstream(method: str, url: str, payload: dict | None = None):
+        with tracer.start_as_current_span(f"{method} downstream", kind=SpanKind.CLIENT) as span:
             span.set_attribute("server.address", httpx.URL(url).host)
-            span.set_attribute("http.request.method", "POST")
+            span.set_attribute("http.request.method", method)
             headers = {"Authorization": f"Bearer {settings.token}"}
             propagate.inject(headers)
-            response = await app.state.client.post(url, json=payload, headers=headers)
+            response = await app.state.client.request(method, url, json=payload, headers=headers)
             span.set_attribute("http.response.status_code", response.status_code)
+            if method == "GET" and response.status_code == 404:
+                return None
             response.raise_for_status()
             return response.json()
+
+    def confirmed(receipt: dict | None, payload: dict, expected: str) -> bool:
+        return isinstance(receipt, dict) and all(
+            receipt.get(key) == value
+            for key, value in {
+                "activation_id": payload["activation_id"],
+                "plan": payload["plan"],
+                "region": payload["region"],
+                "status": expected,
+                "effect_count": 1,
+            }.items()
+        )
 
     if settings.service == "activation-api":
 
@@ -170,7 +191,7 @@ def create_app(settings: Settings, transport: httpx.AsyncBaseTransport | None = 
                 return JSONResponse(
                     result, status_code=status, headers={"Idempotency-Replayed": "true"}
                 )
-            activation_id = str(uuid4())
+            activation_id = store.get(idempotency_key)["activation_id"]
             payload = {**body.model_dump(), "activation_id": activation_id}
             with tracer.start_as_current_span(
                 "activation.process",
@@ -181,8 +202,13 @@ def create_app(settings: Settings, transport: httpx.AsyncBaseTransport | None = 
                 },
             ) as span:
                 try:
-                    await downstream(f"{settings.inventory_url}/internal/reservations", payload)
-                    await downstream(f"{settings.provisioning_url}/internal/provisions", payload)
+                    for url, expected in (
+                        (f"{settings.inventory_url}/internal/reservations", "reserved"),
+                        (f"{settings.provisioning_url}/internal/provisions", "provisioned"),
+                    ):
+                        receipt = await downstream("POST", url, payload)
+                        if not confirmed(receipt, payload, expected):
+                            raise ValueError("Invalid downstream receipt")
                     result = {"activation_id": activation_id, "status": "active", "plan": body.plan}
                     status = 201
                 except (httpx.HTTPError, ValueError) as error:
@@ -202,6 +228,78 @@ def create_app(settings: Settings, transport: httpx.AsyncBaseTransport | None = 
                 store.complete(idempotency_key, status, result)
                 return JSONResponse(result, status_code=status)
 
+        @app.get("/api/v1/activations/{key}", dependencies=auth)
+        async def activation_status(key: Annotated[str, Path(pattern=r"^[A-Za-z0-9_-]{8,80}$")]):
+            item = store.get(key)
+            if item is None:
+                raise HTTPException(404, "Activation not found")
+            return item
+
+        @app.post("/api/v1/activations/{key}/reconcile", dependencies=auth)
+        async def reconcile_activation(
+            key: Annotated[str, Path(pattern=r"^[A-Za-z0-9_-]{8,80}$")],
+        ):
+            item = store.get(key)
+            if item is None:
+                raise HTTPException(404, "Activation not found")
+            if item["status"] == "active":
+                return item["result"]
+            evidence = {"inventory": "unknown", "provisioning": "unknown"}
+            if item["activation_id"] and item["payload"]:
+                payload = {**item["payload"], "activation_id": item["activation_id"]}
+                with tracer.start_as_current_span(
+                    "activation.reconcile",
+                    attributes={"business.activation.id": item["activation_id"]},
+                ):
+                    for service, url, expected in (
+                        (
+                            "inventory",
+                            f"{settings.inventory_url}/internal/reservations",
+                            "reserved",
+                        ),
+                        (
+                            "provisioning",
+                            f"{settings.provisioning_url}/internal/provisions",
+                            "provisioned",
+                        ),
+                    ):
+                        try:
+                            receipt = await downstream("GET", f"{url}/{item['activation_id']}")
+                            evidence[service] = (
+                                "confirmed"
+                                if confirmed(receipt, payload, expected)
+                                else "missing"
+                                if receipt is None
+                                else "invalid"
+                            )
+                        except (httpx.HTTPError, ValueError):
+                            evidence[service] = "unavailable"
+            success = all(value == "confirmed" for value in evidence.values())
+            evidence["outcome"] = "confirmed" if success else "blocked"
+            result = (
+                {
+                    "activation_id": item["activation_id"],
+                    "status": "active",
+                    "plan": payload["plan"],
+                }
+                if success
+                else None
+            )
+            store.reconcile(key, result, evidence)
+            logger.info(
+                "Activation reconciliation completed",
+                extra={
+                    "fields": {
+                        "business": {"activation": {"id": item["activation_id"]}},
+                        "reconciliation": evidence,
+                    }
+                },
+            )
+            return JSONResponse(
+                result or {"status": "requires_reconciliation", "evidence": evidence},
+                status_code=200 if success else 409,
+            )
+
     elif settings.service == "inventory":
 
         @app.post("/internal/reservations", dependencies=auth)
@@ -220,7 +318,13 @@ def create_app(settings: Settings, transport: httpx.AsyncBaseTransport | None = 
                         }
                     },
                 )
-                return {"activation_id": body.activation_id, "status": "reserved"}
+                try:
+                    result, _ = store.apply_effect(
+                        body.activation_id, body.model_dump(), "reserved"
+                    )
+                except ConflictError as error:
+                    raise HTTPException(409, str(error)) from error
+                return result
 
     else:
 
@@ -248,6 +352,12 @@ def create_app(settings: Settings, transport: httpx.AsyncBaseTransport | None = 
                         },
                     )
                     raise HTTPException(503, "Provisioning dependency unavailable")
+                try:
+                    result, replayed = store.apply_effect(
+                        body.activation_id, body.model_dump(), "provisioned"
+                    )
+                except ConflictError as error:
+                    raise HTTPException(409, str(error)) from error
                 logger.info(
                     "Service provisioned",
                     extra={
@@ -256,7 +366,25 @@ def create_app(settings: Settings, transport: httpx.AsyncBaseTransport | None = 
                         }
                     },
                 )
-                return {"activation_id": body.activation_id, "status": "provisioned"}
+                if body.scenario == "response_loss" and not replayed:
+                    raise HTTPException(503, "Synthetic acknowledgement lost after durable commit")
+                return result
+
+    if settings.service in {"inventory", "provisioning"}:
+        effect_route = (
+            "/internal/reservations/{activation_id}"
+            if settings.service == "inventory"
+            else "/internal/provisions/{activation_id}"
+        )
+
+        @app.get(effect_route, dependencies=auth)
+        async def effect_status(
+            activation_id: Annotated[str, Path(pattern=r"^[a-f0-9-]{36}$")],
+        ):
+            receipt = store.effect(activation_id)
+            if receipt is None:
+                raise HTTPException(404, "Effect not found")
+            return receipt
 
     return app
 

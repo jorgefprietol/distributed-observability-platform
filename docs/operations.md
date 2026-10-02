@@ -16,9 +16,11 @@ El bootstrap debe terminar con código cero. Si falla, revisar su salida antes d
 2. En Discover, seleccionar `Platform logs` y buscar `trace.id: "<id>"`.
 3. En APM, abrir `activation-api` y localizar la transacción correspondiente. El waterfall muestra spans clientes y operaciones de inventario y aprovisionamiento.
 4. Filtrar `business.activation.id: "<id>"` en logs para relacionar señales de negocio.
-5. Revisar `log.level: "error"`, `event.outcome: "failure"` y estado HTTP. Una activación 503 conserva su resultado y exige reconciliación; repetirla no ejecuta de nuevo las dependencias.
+5. Revisar `log.level: "error"`, `event.outcome: "failure"` y estado HTTP. Una activación 503 conserva su resultado y exige reconciliación; repetirla no ejecuta de nuevo las dependencias. Consultar el estado y ejecutar la reconciliación autenticada para buscar comprobantes autoritativos.
 
 El escenario `latency` añade 350 ms a `provisioning.activate`. El escenario `failure` genera un 503 en aprovisionamiento y otro en la API, dejando evidencia en los spans y logs de ambas aplicaciones.
+
+`response_loss` guarda el aprovisionamiento antes de devolver 503. La reconciliación consulta los dos servicios y distingue este caso de un efecto ausente: sólo el primero puede confirmarse como activo. Ver el [ejercicio reproducible de incidentes](incident-exercise.md).
 
 ## Consultas
 

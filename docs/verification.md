@@ -1,6 +1,6 @@
 # Verificación
 
-Las 22 pruebas automatizadas pasan en Windows y Linux, con 98,36 % de cobertura sobre aplicación, configuración y persistencia. La prueba E2E del stack también pasó en runners hospedados y en Docker Desktop.
+La suite actual contiene 36 pruebas automatizadas, con 97,52 % de cobertura sobre aplicación, configuración y persistencia en la ejecución local. El pipeline las ejecuta en Windows y Linux. Las ejecuciones de referencia también verifican el stack completo en runners hospedados y Docker Desktop.
 
 La [ejecución de referencia](https://github.com/jorgefprietol/distributed-observability-platform/actions/runs/37041870034) verificó las tres aplicaciones bajo una misma traza, logs correlacionados, cinco eventos de error del incidente controlado, 14 eventos de acceso HTTP, métricas de CPU y métricas de aplicación. El escaneo bloqueante pasó, generó el SBOM y publicó una imagen pública con atestación de procedencia. Los números de eventos son observaciones de esa ejecución, no benchmarks ni resultados productivos.
 
@@ -17,7 +17,10 @@ También se revisaron visualmente los seis paneles de Kibana, incluida la conver
 - Kibana debe tener tres data views y un dashboard de seis paneles.
 - La cuenta de ingestión debe tener acceso de escritura sin poder administrar usuarios.
 - Los logs deben estar gestionados por ILM.
+- Una pérdida de acuse después del efecto debe poder reconciliarse consultando comprobantes tras reiniciar las aplicaciones.
+- Un efecto ausente o una respuesta inválida no deben convertirse en éxito ni generar un nuevo POST de negocio.
+- Solicitudes simultáneas con un mismo ID deben persistir un único efecto; el éxito reconciliado no puede degradarse por un fallo tardío.
 
-El pipeline conserva JUnit, cobertura, `e2e.json`, estado Compose, diagnóstico de servicios, reporte de vulnerabilidades y SBOM como artifacts. Los resultados de una ejecución corresponden a su commit concreto; el badge del README muestra el estado de la rama principal.
+El pipeline conserva JUnit, cobertura, `e2e.json`, `incident-drill.json`, estado Compose, diagnóstico de servicios, reporte de vulnerabilidades y SBOM como artifacts. Los resultados de una ejecución corresponden a su commit concreto; el badge del README muestra el estado de la rama principal.
 
 La cobertura reportada corresponde a aplicación, configuración y persistencia. El módulo de exportación de telemetría queda fuera de la cifra de cobertura y se verifica mediante el stack real y pruebas de formato ECS.

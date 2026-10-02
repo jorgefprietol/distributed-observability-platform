@@ -4,9 +4,13 @@
 
 Una solicitud de activación cruza la API, la evaluación de inventario y el aprovisionamiento. Un fallo en la última dependencia debe ser identificable desde la respuesta HTTP hasta la operación responsable, sin registrar credenciales ni información personal.
 
-Cada servicio expone únicamente su contrato. La API guarda la clave de idempotencia, una huella del cuerpo y el resultado HTTP en SQLite con WAL. La adquisición de una clave usa la restricción única de la base de datos antes de invocar dependencias. Una solicitud concurrente con resultado pendiente recibe 409. Después de reiniciar, las claves pendientes continúan bloqueadas para evitar duplicar efectos inciertos.
+Cada servicio expone únicamente su contrato. La API guarda la clave de idempotencia, una huella del cuerpo, el ID estable, la solicitud y el resultado HTTP en SQLite con WAL. La identidad se persiste antes de invocar dependencias. La adquisición de una clave usa una restricción única. Una solicitud concurrente con resultado pendiente recibe 409; tras reiniciar permanece bloqueada hasta obtener evidencia suficiente.
 
-Los errores de transporte, timeouts, respuestas no satisfactorias o JSON inválido producen `requires_reconciliation`. No se realizan reintentos automáticos de negocio. La reserva y el aprovisionamiento representan dependencias sintéticas; una integración real exige idempotencia en cada receptor y un procedimiento de reconciliación o compensación.
+Los errores de transporte, timeouts, respuestas no satisfactorias, JSON inválido o comprobantes que no coinciden producen `requires_reconciliation`. Inventario y aprovisionamiento tienen bases y volúmenes propios. El efecto sintético es una fila única por ID: se guarda junto con su comprobante en una única escritura y se rechaza reutilizar el ID con otro plan o región.
+
+La reconciliación consulta mediante GET ambos comprobantes autenticados. Verifica ID, plan, región, estado y un único efecto; sólo entonces actualiza el ledger a activo y registra la evidencia en una transacción. Nunca vuelve a ejecutar efectos. Si un efecto falta, es inválido o no puede consultarse, el caso sigue bloqueado. Un error tardío de la solicitud original no puede sobrescribir un estado activo confirmado.
+
+El escenario `response_loss` demuestra un efecto guardado cuyo acuse falla. Los comprobantes permiten recuperarlo incluso después de reiniciar las tres aplicaciones. El esquema anterior se migra agregando columnas y tablas; registros históricos sin identidad o solicitud no se completan por inferencia. Los efectos son sintéticos: un proveedor externo necesitaría idempotencia y comprobantes autoritativos propios; estas bases no crean una transacción distribuida.
 
 ## Trazas y correlación
 
@@ -38,7 +42,7 @@ Los servicios propios ejecutan UID 10001, sin capabilities, con raíz de sólo l
 | --- | --- | --- |
 | Una imagen para tres roles | Reutilizar instrumentación y reducir variación del empaquetado | Cada servicio tiene configuración y proceso propios |
 | Instrumentación explícita | Mostrar spans de negocio y controlar etiquetas | Nuevas operaciones deben instrumentarse |
-| SQLite WAL | Persistencia y exclusión de claves sin servicio adicional | API de un proceso; evolución a almacenamiento compartido para escalado |
+| SQLite WAL por servicio | Persistencia, exclusión de claves y comprobantes durables | Un proceso por servicio; evolución a almacenamiento compartido para escalado |
 | Captura de logs por archivos | Procesamiento Filebeat/Logstash sin montar el socket Docker | Comparte un volumen local de logs |
 | Metricbeat sin privilegios de host | Métricas sin acceso al socket Docker | No representa una captura completa del host Windows |
 | Dashboard importable | Provisión reproducible y revisión en Git | Cambios de versión deben validar migraciones de objetos Kibana |
