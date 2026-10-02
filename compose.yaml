@@ -10,7 +10,7 @@ x-app: &app
   read_only: true
   cap_drop: [ALL]
   security_opt: [no-new-privileges:true]
-  tmpfs: [/tmp:size=32m,mode=1777]
+  tmpfs: ["/tmp:size=32m,mode=1777"]
   mem_limit: 256m
   cpus: 0.5
   pids_limit: 100
@@ -110,7 +110,7 @@ services:
       <<: *app-env
       SERVICE_NAME: inventory
     volumes: [service-logs:/logs]
-    tmpfs: [/tmp:size=32m,mode=1777, /data:size=16m,uid=10001,gid=10001]
+    tmpfs: ["/tmp:size=32m,mode=1777", "/data:size=16m,uid=10001,gid=10001"]
 
   provisioning:
     <<: *app
@@ -118,7 +118,7 @@ services:
       <<: *app-env
       SERVICE_NAME: provisioning
     volumes: [service-logs:/logs]
-    tmpfs: [/tmp:size=32m,mode=1777, /data:size=16m,uid=10001,gid=10001]
+    tmpfs: ["/tmp:size=32m,mode=1777", "/data:size=16m,uid=10001,gid=10001"]
 
   collector:
     image: otel/opentelemetry-collector-contrib:0.161.0@sha256:fd328de2552466ad78385e1b1289c3f2402b1c45f265b252aab1955b42845ac1
@@ -206,3 +206,6 @@ volumes:
 networks:
   platform:
     driver: bridge
+    ipam:
+      config:
+        - subnet: ${PLATFORM_SUBNET:-10.203.74.0/24}

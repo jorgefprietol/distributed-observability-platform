@@ -57,4 +57,6 @@ Para actualizar la aplicación, establecer `APP_IMAGE` con un digest validado, c
 
 ## Límites de capacidad
 
+La red usa `10.203.74.0/24` para no depender de pools Docker agotados por otros proyectos. Si coincide con una ruta o red existente, definir `PLATFORM_SUBNET` en `.env` con un CIDR disponible antes de iniciar el stack.
+
 Vigilar `docker stats`, espacio de volúmenes, colas Filebeat y Collector, y errores de exportación. Las colas son acotadas; una caída prolongada o el agotamiento de disco puede producir pérdidas. El bootstrap necesita acceso al registro de paquetes Elastic para instalar los assets APM. En un entorno aislado debe prepararse un registro o bundle compatible.
