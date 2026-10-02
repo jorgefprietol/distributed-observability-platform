@@ -47,6 +47,13 @@ El pipeline GeoIP enriquece `source.geo` cuando la IP existe en la base de datos
 
 El comando escribe `artifacts/slo.json` y devuelve 2 ante incumplimiento, 0 cuando hay salud o tráfico insuficiente y error de ejecución ante una consulta fallida. Permite integrarse con un scheduler o sistema de notificaciones de cada entorno. No hay un envío de notificaciones externo ni una alerta nativa de Kibana activados por defecto.
 
+```powershell
+python scripts/traffic.py --requests 30 --scenario normal
+python scripts/traffic.py --requests 5 --scenario failure
+# Esperar a que los logs estén indexados antes de evaluar.
+python scripts/check-slo.py
+```
+
 ## Retención y recuperación
 
 Consultar `GET /logs-platform-local/_ilm/explain` con autenticación para revisar rollover y eliminación. Los índices diarios de infraestructura tienen su propia política. APM conserva las políticas instaladas por Elastic; no hereda la retención personalizada de logs.
